@@ -45,15 +45,10 @@ impl Handler {
 		}
     }
 
-	async fn handle_root_request<R: ResponseHandler>(
+	fn handle_root_request(
 		&self,
 		request: &Request,
-		responder: &mut R,
-	) -> Result<ResponseInfo, Error> {
-		let builder = MessageResponseBuilder::from_message_request(request);
-		let mut header = Header::response_from_request(request.header());
-		header.set_authoritative(true);
-
+	) -> Result<Vec<Record>, Error> {
 		let mut records = Vec::new();
 
 		if let Some(ipv4) = self.root_ipv4 {
@@ -64,15 +59,13 @@ impl Handler {
 			records.push(Record::from_rdata(request.query().name().into(), 3600, RData::AAAA(AAAA(ipv6))));
 		}
 
-		let response = builder.build(header, records.iter(), &[], &[], &[]);
-		return Ok(responder.send_response(response).await?);
+		return Ok(records);
 	}
 
-	async fn do_handle_request<R: ResponseHandler>(
+	fn do_handle_request(
 		&self,
 		request: &Request,
-		responder: &mut R,
-	) -> Result<ResponseInfo, Error> {
+	) -> Result<Vec<Record>, Error> {
 		if request.op_code() != OpCode::Query {
 			return Err(Error::InvalidOpCode(request.op_code()));
 		}
@@ -88,7 +81,7 @@ impl Handler {
 		}
 
 		if self.root_zone.zone_of(name) && self.root_zone.num_labels() == name.num_labels() {
-			return self.handle_root_request(request, responder).await;
+			return self.handle_root_request(request);
 		}
 
 		let mut parser = Parser::new();
@@ -103,13 +96,8 @@ impl Handler {
 
 		match address_result {
 			Ok(address) => {
-				let builder = MessageResponseBuilder::from_message_request(request);
-				let mut header = Header::response_from_request(request.header());
-				header.set_authoritative(true);
-
 				let records = vec![Record::from_rdata(request.query().name().into(), 3600, RData::AAAA(AAAA(address)))];
-				let response = builder.build(header, records.iter(), &[], &[], &[]);
-        		Ok(responder.send_response(response).await?)
+        		Ok(records)
 			}
 			Err(e) => {
 				Err(e)
@@ -125,24 +113,30 @@ impl RequestHandler for Handler {
         request: &Request,
         mut responder: R,
     ) -> ResponseInfo {
-        match self.do_handle_request(request, &mut responder).await {
-			Ok(info) => info,
-			Err(e) => {
-				let builder = MessageResponseBuilder::from_message_request(request);
-				let mut header = Header::response_from_request(request.header());
-				header.set_authoritative(true);
+        let result = self.do_handle_request(request);
 
+		let records = match result {
+			Ok(records) => records,
+			Err(e) => {
 				let response_str = match e {
 					Error::InvalidAddress => "Invalid address",
 					Error::NotEnoughOctets => "Not enough octets",
 					_ => "Unknown error",
 				};
 
-				let rdata = RData::TXT(TXT::new(vec![response_str.to_string()]));
-				let records = vec![Record::from_rdata(request.query().name().into(), 60, rdata)];
-				let response = builder.build(header, records.iter(), &[], &[], &[]);
-				responder.send_response(response).await.unwrap()
+				vec![Record::from_rdata(request.query().name().into(), 60, RData::TXT(TXT::new(vec![response_str.to_string()])))]
 			}
-		}
+		};
+
+		let builder = MessageResponseBuilder::from_message_request(request);
+		let mut header = Header::response_from_request(request.header());
+		header.set_authoritative(true);
+
+		// only respond with the records that match the query type
+		let response = builder.build(header, records.iter().filter(|record| {
+			record.record_type() == request.query().query_type()
+		}), &[], &[], &[]);
+
+		responder.send_response(response).await.unwrap()
     }
 }
