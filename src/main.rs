@@ -18,6 +18,14 @@ struct Args {
 	/// UDP socket to listen on.
     #[clap(long, short, default_value = "0.0.0.0:1053", env = "OCTETZONE_LISTEN")]
     pub udp: SocketAddr,
+
+	/// IPV4 address to resolve to for the root domain name
+	#[clap(long = "root-v4" )]
+	pub root_ipv4: Option<String>,
+
+	/// IPV6 address to resolve to for the root domain name
+	#[clap(long = "root-v6" )]
+	pub root_ipv6: Option<String>,
 }
 
 #[tokio::main]

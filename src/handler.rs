@@ -6,7 +6,7 @@ use tracing::*;
 use hickory_server::{
 	authority::MessageResponseBuilder,
 	proto::op::{Header, MessageType, OpCode},
-	proto::rr::{IntoName, LowerName, Name, RData, Record, rdata::AAAA, rdata::TXT},
+	proto::rr::{IntoName, LowerName, Name, RData, Record, rdata::AAAA, rdata::TXT, rdata::A},
 	server::{Request, RequestHandler, ResponseHandler, ResponseInfo}
 };
 
@@ -30,6 +30,8 @@ pub enum Error {
 #[derive(Clone, Debug)]
 pub struct Handler {
 	root_zone: LowerName,
+	root_ipv4: Option<std::net::Ipv4Addr>,
+	root_ipv6: Option<std::net::Ipv6Addr>,
 }
 
 impl Handler {
@@ -38,8 +40,33 @@ impl Handler {
 		let domain = &args.domain;
         Handler {
 			root_zone: LowerName::from(Name::from_str(domain).unwrap()),
+			root_ipv4: match &args.root_ipv4 { Some(ipv4) => Some(std::net::Ipv4Addr::from_str(&ipv4).unwrap()), None => None },
+			root_ipv6: match &args.root_ipv6 { Some(ipv6) => Some(std::net::Ipv6Addr::from_str(&ipv6).unwrap()), None => None },
 		}
     }
+
+	async fn handle_root_request<R: ResponseHandler>(
+		&self,
+		request: &Request,
+		responder: &mut R,
+	) -> Result<ResponseInfo, Error> {
+		let builder = MessageResponseBuilder::from_message_request(request);
+		let mut header = Header::response_from_request(request.header());
+		header.set_authoritative(true);
+
+		let mut records = Vec::new();
+
+		if let Some(ipv4) = self.root_ipv4 {
+			records.push(Record::from_rdata(request.query().name().into(), 3600, RData::A(A(ipv4))));
+		}
+
+		if let Some(ipv6) = self.root_ipv6 {
+			records.push(Record::from_rdata(request.query().name().into(), 3600, RData::AAAA(AAAA(ipv6))));
+		}
+
+		let response = builder.build(header, records.iter(), &[], &[], &[]);
+		return Ok(responder.send_response(response).await?);
+	}
 
 	async fn do_handle_request<R: ResponseHandler>(
 		&self,
@@ -60,6 +87,10 @@ impl Handler {
 			return Err(Error::InvalidZone(name.clone()));
 		}
 
+		if self.root_zone.zone_of(name) && self.root_zone.num_labels() == name.num_labels() {
+			return self.handle_root_request(request, responder).await;
+		}
+
 		let mut parser = Parser::new();
 
 		for label in name.into_name().unwrap().iter() {
@@ -75,7 +106,6 @@ impl Handler {
 				let builder = MessageResponseBuilder::from_message_request(request);
 				let mut header = Header::response_from_request(request.header());
 				header.set_authoritative(true);
-
 
 				let records = vec![Record::from_rdata(request.query().name().into(), 3600, RData::AAAA(AAAA(address)))];
 				let response = builder.build(header, records.iter(), &[], &[], &[]);
