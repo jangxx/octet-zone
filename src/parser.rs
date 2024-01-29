@@ -1,11 +1,14 @@
 use regex::Regex;
-use std::u16;
+use std::{net::Ipv6Addr, u16};
+
+use crate::handler::Error;
 
 #[derive(PartialEq, Debug)]
 pub enum Token {
 	Octet(u8),
 	Filler,
 	HexBlock(u16),
+	MappedModifier,
 	LocalModifier,
 	Unknown,
 }
@@ -30,6 +33,7 @@ impl Parser {
 	pub fn add_token_from_label(&mut self, label: &str) {
 		let mut token = match label {
 			"_" => Token::Filler,
+			"map" => Token::MappedModifier,
 			"local" => Token::LocalModifier,
 			_ => Token::Unknown,
 		};
@@ -83,9 +87,93 @@ impl Parser {
 		self.tokens.push(token);
 	}
 
-	pub fn print_tokens(&self) {
+	// pub fn print_tokens(&self) {
+	// 	for token in &self.tokens {
+	// 		println!("{:?}", token);
+	// 	}
+	// }
+
+	pub fn to_address(&self) -> Result<Ipv6Addr, Error> {
+		let mut total_octets: i8 = 0;
+		let mut filler_start: i8 = -1;
+		let mut octets: [u8; 16] = [0; 16];
+		let mut is_valid = true;
+		let mut last_was_octet = false;
+
 		for token in &self.tokens {
-			println!("{:?}", token);
+			match token {
+				Token::Octet(octet) => {
+					if (total_octets % 2 == 1 && !last_was_octet) || total_octets == 16 {
+						is_valid = false;
+						break;
+					}
+
+					octets[total_octets as usize] = *octet;
+					total_octets += 1;
+					last_was_octet = total_octets % 2 == 1;
+				},
+				Token::Filler => {
+					if filler_start != -1 || total_octets == 16 { // can only have one filler in the address
+						is_valid = false;
+						break;
+					}
+					filler_start = total_octets;
+				},
+				Token::HexBlock(hexblock) => {
+					if total_octets % 2 != 0 || total_octets == 16 {
+						is_valid = false;
+						break;
+					}
+
+					octets[total_octets as usize] = (*hexblock >> 8) as u8;
+					octets[(total_octets + 1) as usize] = (*hexblock & 0xFF) as u8;
+					total_octets += 2;
+				},
+				Token::MappedModifier => {
+					if total_octets != 0 || filler_start != -1 { // needs to be at the start
+						is_valid = false;
+						break;
+					}
+
+					total_octets = 12;
+					octets[10] = 0xFF;
+					octets[11] = 0xFF;
+				},
+				Token::LocalModifier => {
+					if total_octets != 0 || filler_start != -1 { // needs to be at the start
+						is_valid = false;
+						break;
+					}
+
+					total_octets = 8;
+					octets[0] = 0xFE;
+					octets[1] = 0x80;
+				}
+				Token::Unknown => {
+					if total_octets != 16 && filler_start == -1 { // needs to be at the end
+						is_valid = false;
+						break;
+					}
+				}
+			}
+		}
+
+		if !is_valid || last_was_octet {
+			return Err(Error::InvalidAddress);
+		}
+		if total_octets != 16 && filler_start == -1 {
+			return Err(Error::NotEnoughOctets);
+		}
+
+		if filler_start == -1 {
+			return Ok(Ipv6Addr::from(octets));
+		} else {
+			let mut address: [u8; 16] = [0; 16];
+
+			address[..filler_start as usize].copy_from_slice(&octets[..filler_start as usize]);
+			address[(16 - total_octets + filler_start) as usize..].copy_from_slice(&octets[filler_start as usize..total_octets as usize]);
+
+			return Ok(Ipv6Addr::from(address));
 		}
 	}
 }

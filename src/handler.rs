@@ -1,12 +1,13 @@
-use std::{io, str::FromStr, io::Write};
+use std::str::FromStr;
 
 use crate::Args;
 use crate::parser::Parser;
 use tracing::*;
 use hickory_server::{
-	server::{Request, RequestHandler, ResponseHandler, ResponseInfo},
-	proto::op::{Header, ResponseCode, MessageType, OpCode},
-	proto::rr::{LowerName, Name, IntoName},
+	authority::MessageResponseBuilder,
+	proto::op::{Header, MessageType, OpCode},
+	proto::rr::{IntoName, LowerName, Name, RData, Record, rdata::AAAA, rdata::TXT},
+	server::{Request, RequestHandler, ResponseHandler, ResponseInfo}
 };
 
 #[derive(thiserror::Error, Debug)]
@@ -19,8 +20,10 @@ pub enum Error {
     InvalidZone(LowerName),
     #[error("IO error: {0:}")]
     Io(#[from] std::io::Error),
-	#[error("Whatever")]
-	Whatever,
+	#[error("Invalid address")]
+	InvalidAddress,
+	#[error("Not enough octets")]
+	NotEnoughOctets,
 }
 
 /// DNS Request Handler
@@ -41,7 +44,7 @@ impl Handler {
 	async fn do_handle_request<R: ResponseHandler>(
 		&self,
 		request: &Request,
-		response: R,
+		responder: &mut R,
 	) -> Result<ResponseInfo, Error> {
 		if request.op_code() != OpCode::Query {
 			return Err(Error::InvalidOpCode(request.op_code()));
@@ -53,8 +56,6 @@ impl Handler {
 
 		let name = request.query().name();
 
-		// println!("name: {}", name);
-
 		if !self.root_zone.zone_of(name) {
 			return Err(Error::InvalidZone(name.clone()));
 		}
@@ -62,16 +63,28 @@ impl Handler {
 		let mut parser = Parser::new();
 
 		for label in name.into_name().unwrap().iter() {
-			// print!("label: {}", label);
-			// io::stdout().write(label).unwrap();
-			// println!();
-
 			parser.add_token_from_label(std::str::from_utf8(label).unwrap());
 		}
 
-		parser.print_tokens();
+		// parser.print_tokens();
 
-		return Err(Error::Whatever);
+		let address_result = parser.to_address();
+
+		match address_result {
+			Ok(address) => {
+				let builder = MessageResponseBuilder::from_message_request(request);
+				let mut header = Header::response_from_request(request.header());
+				header.set_authoritative(true);
+
+
+				let records = vec![Record::from_rdata(request.query().name().into(), 3600, RData::AAAA(AAAA(address)))];
+				let response = builder.build(header, records.iter(), &[], &[], &[]);
+        		Ok(responder.send_response(response).await?)
+			}
+			Err(e) => {
+				Err(e)
+			}
+		}
 	}
 }
 
@@ -79,16 +92,26 @@ impl Handler {
 impl RequestHandler for Handler {
     async fn handle_request<R: ResponseHandler>(
         &self,
-        _request: &Request,
-        _response: R,
+        request: &Request,
+        mut responder: R,
     ) -> ResponseInfo {
-        match self.do_handle_request(_request, _response).await {
+        match self.do_handle_request(request, &mut responder).await {
 			Ok(info) => info,
 			Err(e) => {
-				tracing::error!("Error handling request: {}", e);
-				let mut header = Header::new();
-				header.set_response_code(ResponseCode::ServFail);
-				header.into()
+				let builder = MessageResponseBuilder::from_message_request(request);
+				let mut header = Header::response_from_request(request.header());
+				header.set_authoritative(true);
+
+				let response_str = match e {
+					Error::InvalidAddress => "Invalid address",
+					Error::NotEnoughOctets => "Not enough octets",
+					_ => "Unknown error",
+				};
+
+				let rdata = RData::TXT(TXT::new(vec![response_str.to_string()]));
+				let records = vec![Record::from_rdata(request.query().name().into(), 60, rdata)];
+				let response = builder.build(header, records.iter(), &[], &[], &[]);
+				responder.send_response(response).await.unwrap()
 			}
 		}
     }
