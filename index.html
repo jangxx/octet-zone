@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<title>OCTET ZONE</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+		<link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Source+Code+Pro">
+		<style>
+			body {
+				font-family: 'Source Code Pro', monospace;
+				max-width: 700px;
+				margin-left: auto;
+				margin-right: auto;
+				padding: 10px;
+			}
+
+			ul {
+				margin-left: auto;
+				margin-right: auto;
+				text-align: left;
+			}
+
+			code {
+				font-family: 'Source Code Pro', monospace;
+				font-weight: 600;
+				word-wrap: break-word;
+			}
+
+			.margin-top {
+				margin-top: 1em;
+			}
+
+			input {
+				box-sizing: border-box;
+			}
+
+			#ipv6-input {
+				font-family: 'Source Code Pro', monospace;
+				font-size: 1.5em;
+				text-align: center;
+				width: 100%;
+			}
+
+			footer {
+				margin-top: 2em;
+				text-align: center;
+			}
+		</style>
+		<script type="text/javascript">
+			function update() {
+				const input = document.getElementById("ipv6-input");
+				const output = document.getElementById("example-output");
+
+				const useHexBlocks = document.getElementById("use-hex-blocks").checked;
+
+				let parts = input.value.replace("::", ":_:").split(":");
+				let hasFiller = false;
+				let end = false;
+				const result = [];
+
+				if (parts.length < 8 && !parts.includes("_")) {
+					output.innerText = "Invalid input (too few groups)";
+					return;
+				}
+
+				for (const part of parts) {
+					if (part === "") {
+						if (result.length == 0) {
+							continue;
+						} else if (result.length > 0 && !end) {
+							end = true;
+							continue;
+						}
+					}
+
+					if (end) {
+						output.innerText = "Invalid input";
+						return;
+					}
+
+					if (part === "_") {
+						if (hasFiller) {
+							output.innerText = "Invalid input (only one occurence of :: allowed)";
+							return;
+						} else {
+							hasFiller = true;
+							result.push("_");
+							continue;
+						}
+					}
+
+					if (!part.match(/^[0-9a-fA-F]{0,4}$/)) {
+						output.innerText = "Invalid input (address needs to be in hex notation)";
+						return;
+					}
+
+					if (useHexBlocks) {
+						if (part.length == 4) {
+							result.push(part);
+						} else {
+							result.push(`x${part}`);
+						}
+					} else {
+						const hex = parseInt(part, 16);
+						result.push((hex >> 8) & 0xFF);
+						result.push(hex & 0xFF);
+					}
+				}
+
+				output.innerText = result.join(".") + ".octet.zone";
+			}
+		</script>
+	</head>
+	<body>
+		<h1>Welcome to the OCTET ZONE</h1>
+
+		<div><i>A dynamic DNS resolver that brings octet notation to IPv6.</i></div>
+
+		<h2>Motivation</h2>
+
+		<div>
+			No discussion about IPv6 would be complete without someone mentioning that it would be oh so much better if the address format was similar to IPv4, but with more octets.
+			This project makes this wish a reality by allowing you to write an address like <code>2606:2800:220:1:248:1893:25c8:1946</code> as <code>38.6.40.0.2.32.0.1.2.72.24.147.37.200.25.70.octet.zone</code> instead!
+			So much easier to remember.
+		</div>
+
+		<h2>Usage</h2>
+
+		<div>To use this service, simply convert each 16-bit group of your address into two decimal numbers and append <code>.octet.zone</code> to the end.</div>
+		<div>You can also write the groups as hex digits, either with four unmodified digits or by prepending an <code>x</code> (i.e. <i>ABC</i> turns into <i>xABC</i> but <i>ABCD</i> can remain unchanged).</div>
+		<div>These formats can even be mixed and matched! The only rule is that each 16-bit group needs to either be exactly two decimal octets or a single hex block.</div>
+		<div>
+			IPv6s shorthand <code>::</code> is also supported by adding an underscore.
+			The loopback address can thus be written as <code>_.1.octet.zone</code>.
+			This example also illustrates an exception to the "two octets for each 16-bit group" rule - if the filler is used, it can also be between two decimal octets or in front of a single one at the end.</div>
+		<div>Finally, the service offers some additional convenience features: 
+			<div class="margin-top">> Prepending <code>map</code> to the address turns it into a mapped IPv4 address. <code>map.192.168.1.1.octet.zone</code> therefore resolves to <code>::ffff:c0a8:101</code></div>
+			<div class="margin-top">> Prepending <code>local</code> to the address turns it into a link-local address. <code>local.1.2.3.4.5.6.7.8.octet.zone</code> therefore resolves to <code>fe80::102:304:506:708</code></div>
+		</div>
+
+		<h2>Try it out!</h2>
+
+		<div>Enter an IPv6 address below to see the equivalent octet.zone address. Afterwards try to <code>ping</code> or <code>dig</code> it.</div>
+
+		<div class="margin-top">
+			<input id="ipv6-input" type="text" placeholder="Enter an IPv6 address" oninput="update()" value="2606:2800:220:1:248:1893:25c8:1946">
+		</div>
+
+		<div class="margin-top">
+			<input type="checkbox" id="use-hex-blocks" onchange="update()"> <label for="use-hex-blocks">Use hex blocks</label>
+		</div>
+
+		<div class="margin-top">
+			Result: <code id="example-output"></code>
+		</div>
+
+		<h2>Is this a joke?</h2>
+
+		<div>Yes.</div>
+		<div class="margin-top">I got this idea while reading Hacker News recently and thought it would be a great little project to start messing around with Rust.</div>
+		<div>I suppose it could also genuinely be helpful for remembering some short IPv6 addresses, maybe?</div>
+
+		<footer>
+			<a href="https://github.com/jangxx/octet-zone">Github</a>
+			|
+			<a href="https://twitter.com/jangxx">Twitter</a>
+			|
+			<a href="https://bsky.app/profile/jangxx.com">Bluesky</a>
+			|
+			<a href="https://mastodon.online/@jangxx">Mastodon</a>
+		</footer>
+
+		<script type="text/javascript">
+			update();
+		</script>
+	</body>
+</html>
