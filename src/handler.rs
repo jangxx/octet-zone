@@ -30,8 +30,8 @@ pub enum Error {
 #[derive(Clone, Debug)]
 pub struct Handler {
 	root_zone: LowerName,
-	root_ipv4: Option<std::net::Ipv4Addr>,
-	root_ipv6: Option<std::net::Ipv6Addr>,
+	root_ipv4: Vec<std::net::Ipv4Addr>,
+	root_ipv6: Vec<std::net::Ipv6Addr>,
 }
 
 impl Handler {
@@ -40,8 +40,14 @@ impl Handler {
 		let domain = &args.domain;
         Handler {
 			root_zone: LowerName::from(Name::from_str(domain).unwrap()),
-			root_ipv4: match &args.root_ipv4 { Some(ipv4) => Some(std::net::Ipv4Addr::from_str(&ipv4).unwrap()), None => None },
-			root_ipv6: match &args.root_ipv6 { Some(ipv6) => Some(std::net::Ipv6Addr::from_str(&ipv6).unwrap()), None => None },
+			root_ipv4: match &args.root_ipv4 {
+				Some(ipv4_addrs) => ipv4_addrs.into_iter().map(|addr| std::net::Ipv4Addr::from_str(&addr).unwrap()).collect(),
+				None => vec![]
+			},
+			root_ipv6: match &args.root_ipv6 {
+				Some(ipv6_addrs) => ipv6_addrs.into_iter().map(|addr| std::net::Ipv6Addr::from_str(&addr).unwrap()).collect(),
+				None => vec![]
+			},
 		}
     }
 
@@ -51,12 +57,12 @@ impl Handler {
 	) -> Result<Vec<Record>, Error> {
 		let mut records = Vec::new();
 
-		if let Some(ipv4) = self.root_ipv4 {
-			records.push(Record::from_rdata(request.query().name().into(), 3600, RData::A(A(ipv4))));
+		for ipv4 in &self.root_ipv4 {
+			records.push(Record::from_rdata(request.query().name().into(), 3600, RData::A(A(*ipv4))));
 		}
 
-		if let Some(ipv6) = self.root_ipv6 {
-			records.push(Record::from_rdata(request.query().name().into(), 3600, RData::AAAA(AAAA(ipv6))));
+		for ipv6 in &self.root_ipv6 {
+			records.push(Record::from_rdata(request.query().name().into(), 3600, RData::AAAA(AAAA(*ipv6))));
 		}
 
 		return Ok(records);

@@ -20,12 +20,12 @@ struct Args {
     pub udp: SocketAddr,
 
 	/// IPV4 address to resolve to for the root domain name
-	#[clap(long = "root-v4" )]
-	pub root_ipv4: Option<String>,
+	#[clap(long = "root-v4", short = '4' )]
+	pub root_ipv4: Option<Vec<String>>,
 
 	/// IPV6 address to resolve to for the root domain name
-	#[clap(long = "root-v6" )]
-	pub root_ipv6: Option<String>,
+	#[clap(long = "root-v6", short = '6' )]
+	pub root_ipv6: Option<Vec<String>>,
 }
 
 #[tokio::main]
