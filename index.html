@@ -44,6 +44,31 @@
 				margin-top: 2em;
 				text-align: center;
 			}
+
+			.h-l {
+				animation: header-letters 1s infinite ease-in-out;
+				font-weight: 800;
+				display: inline-block;
+			}
+
+			@keyframes header-letters {
+				0% {
+					transform: translateY(-5px);
+				}
+				50% {
+					transform: translateY(5px);
+				}
+				100% {
+					transform: translateY(-5px);
+				}
+			}
+
+			@media (prefers-color-scheme: dark) {
+				body {
+					background-color: #222;
+					color: #eee;
+				}
+			}
 		</style>
 		<script type="text/javascript">
 			function update() {
@@ -111,7 +136,21 @@
 		</script>
 	</head>
 	<body>
-		<h1>Welcome to the OCTET ZONE</h1>
+		<h1>Welcome to the
+			<div style="display: inline-block">
+			<div class="h-l">O</div><!--
+				--><div class="h-l" style="animation-delay: -0.2s">C</div><!--
+				--><div class="h-l" style="animation-delay: -0.4s">T</div><!--
+				--><div class="h-l" style="animation-delay: -0.6s">E</div><!--
+				--><div class="h-l" style="animation-delay: -0.8s">T</div>
+			</div>
+			<div style="display: inline-block">
+				<div class="h-l" style="animation-delay: -1.0s">Z</div><!--
+				--><div class="h-l" style="animation-delay: -1.2s">O</div><!--
+				--><div class="h-l" style="animation-delay: -1.4s">N</div><!--
+				--><div class="h-l" style="animation-delay: -1.6s">E</div>
+			</div>
+		</h1>
 
 		<div><i>A dynamic DNS resolver that brings octet notation to IPv6.</i></div>
 
@@ -156,7 +195,7 @@
 		<h2>Is this a joke?</h2>
 
 		<div>Yes.</div>
-		<div class="margin-top">I got this idea while reading Hacker News recently and thought it would be a great little project to start messing around with Rust.</div>
+		<div class="margin-top">I got this idea while reading Hacker News recently and thought it would be a fun little project to start messing around with Rust.</div>
 		<div>I suppose it could also genuinely be helpful for remembering some short IPv6 addresses, maybe?</div>
 
 		<footer>
