@@ -26,6 +26,10 @@ struct Args {
 	/// IPV6 address to resolve to for the root domain name
 	#[clap(long = "root-v6", short = '6' )]
 	pub root_ipv6: Option<Vec<String>>,
+
+	/// Additional TXT records to resolve (format: name=value)
+	#[clap(long = "txt" )]
+	pub additional_txt: Option<Vec<String>>,
 }
 
 #[tokio::main]

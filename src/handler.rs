@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{collections::HashMap, str::FromStr};
 
 use crate::Args;
 use crate::parser::Parser;
@@ -6,7 +6,7 @@ use tracing::*;
 use hickory_server::{
 	authority::MessageResponseBuilder,
 	proto::op::{Header, MessageType, OpCode},
-	proto::rr::{IntoName, LowerName, Name, RData, Record, rdata::AAAA, rdata::TXT, rdata::A},
+	proto::rr::{IntoName, LowerName, Name, RData, Record, rdata::AAAA, rdata::{txt, TXT}, rdata::A},
 	server::{Request, RequestHandler, ResponseHandler, ResponseInfo}
 };
 
@@ -32,12 +32,37 @@ pub struct Handler {
 	root_zone: LowerName,
 	root_ipv4: Vec<std::net::Ipv4Addr>,
 	root_ipv6: Vec<std::net::Ipv6Addr>,
+	txt_records: HashMap<LowerName, Vec<Record>>,
 }
 
 impl Handler {
     /// Create new handler from command-line options.
     pub fn from_options(args: &Args) -> Self {
 		let domain = &args.domain;
+		let mut txt_records = HashMap::new();
+
+		match &args.additional_txt {
+			Some(additional_txt) => {
+				for txt_def in additional_txt {
+					let mut parts = txt_def.splitn(2, '=');
+
+					let name = parts.next().unwrap();
+					let value = parts.next().unwrap();
+
+					let name = LowerName::from_str(name).unwrap();
+
+					let txt = txt::TXT::new(vec![value.to_string()]);
+
+					let record = Record::from_rdata(name.clone().into(), 3600, RData::TXT(txt));
+
+					let records = txt_records.entry(name).or_insert(vec![]);
+
+					records.push(record);
+				}
+			},
+			_ => {}
+		}
+
         Handler {
 			root_zone: LowerName::from(Name::from_str(domain).unwrap()),
 			root_ipv4: match &args.root_ipv4 {
@@ -48,6 +73,7 @@ impl Handler {
 				Some(ipv6_addrs) => ipv6_addrs.into_iter().map(|addr| std::net::Ipv6Addr::from_str(&addr).unwrap()).collect(),
 				None => vec![]
 			},
+			txt_records: txt_records,
 		}
     }
 
@@ -63,6 +89,12 @@ impl Handler {
 
 		for ipv6 in &self.root_ipv6 {
 			records.push(Record::from_rdata(request.query().name().into(), 3600, RData::AAAA(AAAA(*ipv6))));
+		}
+
+		if let Some(txt_records) = self.txt_records.get(request.query().name()) {
+			for txt_record in txt_records {
+				records.push(txt_record.clone());
+			}
 		}
 
 		return Ok(records);
@@ -88,6 +120,10 @@ impl Handler {
 
 		if self.root_zone.zone_of(name) && self.root_zone.num_labels() == name.num_labels() {
 			return self.handle_root_request(request);
+		}
+
+		if let Some(records) = self.txt_records.get(name) {
+			return Ok(records.clone());
 		}
 
 		let mut parser = Parser::new();
